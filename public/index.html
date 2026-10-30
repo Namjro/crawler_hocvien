@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VTC Sport Lead Hunter & CRM — Săn Học Viên Cá Nhân (B2C) & CLB (B2B) Đa Mạng Xã Hội</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      backdrop-filter: blur(12px);
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: #1e293b;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- HEADER & THANH THEO DÕI KPI 100 HỌC VIÊN / THÁNG -->
+  <header class="sticky top-0 z-30 bg-slate-900/95 border-b border-slate-800 backdrop-blur-md">
+    <div class="max-w-[1440px] mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center font-extrabold text-lg shadow-lg shadow-blue-500/20">
+          VTC
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-lg text-white tracking-tight">VTC Sport Lead Hunter & CRM</h1>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-medium">
+              B2C Social Hunter + B2B Club
+            </span>
+          </div>
+          <p class="text-xs text-slate-400">Săn Học Viên Cá Nhân (Facebook, TikTok, IG, X, Telegram) & Cơ Sở Thể Thao — hocvienthethao.vtcedu.vn</p>
+        </div>
+      </div>
+
+      <!-- Thanh tiến độ KPI 100 Học Viên / Tháng -->
+      <div class="flex items-center gap-5 bg-slate-800/90 border border-slate-700/80 rounded-xl px-4 py-2">
+        <div>
+          <div class="flex items-center justify-between gap-4 text-xs mb-1">
+            <span class="text-slate-300 font-medium">🎯 KPI Tháng <span id="kpiMonthLabel" class="text-cyan-400 font-bold">--</span>:</span>
+            <span class="font-bold text-emerald-400"><span id="kpiEnrolledCount">0</span> / 100 Học viên (<span id="kpiPercent">0</span>%)</span>
+          </div>
+          <div class="w-52 h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-700">
+            <div id="kpiProgressBar" class="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 transition-all duration-500" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <div class="h-8 w-px bg-slate-700"></div>
+
+        <div class="text-xs">
+          <div class="text-slate-400">Đã liên hệ hôm nay</div>
+          <div class="text-sm font-bold text-white"><span id="kpiTodayOutreach">0</span> lượt</div>
+        </div>
+
+        <div class="h-8 w-px bg-slate-700"></div>
+
+        <div class="text-xs">
+          <div class="text-slate-400">Hẹn gọi lại hôm nay</div>
+          <div class="text-sm font-bold text-amber-400"><span id="kpiFollowUpDueCount">0</span> lịch hẹn</div>
+        </div>
+
+        <a href="/api/export/excel" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition flex items-center gap-1.5 shadow">
+          <span>📥 Xuất Excel</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- THANH ĐIỀU HƯỚNG TABS -->
+    <div class="max-w-[1440px] mx-auto px-4 flex items-center gap-2 border-t border-slate-800/80 pt-2">
+      <button onclick="switchTab('crm')" id="tabBtn-crm" class="tab-btn px-4 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 border-cyan-400 text-cyan-400 bg-slate-800/60">
+        📋 1. CRM Học Viên Cá Nhân & CLB Đã Tiếp Cận (<span id="navTotalLeads">0</span>)
+      </button>
+      <button onclick="switchTab('crawler')" id="tabBtn-crawler" class="tab-btn px-4 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-white">
+        🌐 2. Quét Học Viên Cá Nhân Đa MXH (FB, TikTok, IG, X, Telegram)
+      </button>
+      <button onclick="switchTab('students')" id="tabBtn-students" class="tab-btn px-4 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-white">
+        🎓 3. Quản Lý 100 Học Viên Đã Chốt & Hồ Sơ VTC (<span id="navTotalStudents">0</span>)
+      </button>
+      <button onclick="switchTab('playbook')" id="tabBtn-playbook" class="tab-btn px-4 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-white">
+        💬 4. Kịch Bản Nhắn Cá Nhân (B2C) & CLB (B2B)
+      </button>
+    </div>
+  </header>
+
+  <!-- NỘI DUNG CHÍNH -->
+  <main class="flex-1 max-w-[1440px] w-full mx-auto px-4 py-5">
+
+    <!-- ========================================================================= -->
+    <!-- TAB 1: CRM QUẢN LÝ HỌC VIÊN CÁ NHÂN (B2C) & CƠ SỞ (B2B) ĐÃ TIẾP CẬN -->
+    <!-- ========================================================================= -->
+    <section id="tab-crm" class="space-y-5">
+      <!-- Thẻ thống kê Phễu Chuyển Đổi -->
+      <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
+        <div onclick="setQuickFilter('only_b2c')" class="glass-card p-3.5 rounded-xl cursor-pointer hover:border-cyan-500/50 transition">
+          <div class="text-xs text-cyan-300 font-semibold">👤 Khách Cá Nhân (B2C)</div>
+          <div class="text-2xl font-extrabold text-white mt-1" id="funnelB2C">0</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">PT, HLV Yoga, Dance, Võ...</div>
+        </div>
+        <div onclick="setQuickFilter('only_b2b')" class="glass-card p-3.5 rounded-xl cursor-pointer hover:border-purple-500/50 transition">
+          <div class="text-xs text-purple-300 font-semibold">🏢 Câu Lạc Bộ / Cơ Sở (B2B)</div>
+          <div class="text-2xl font-extrabold text-purple-400 mt-1" id="funnelB2B">0</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">Dự kiến ~<span id="funnelPotentialStudents">0</span> HV</div>
+        </div>
+        <div onclick="setQuickFilter('uncontacted')" class="glass-card p-3.5 rounded-xl cursor-pointer hover:border-blue-500/50 transition">
+          <div class="text-xs text-blue-300">🆕 Chưa từng tiếp cận</div>
+          <div class="text-2xl font-extrabold text-blue-400 mt-1" id="funnelNew">0</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">Bấm để lọc nhắn mới</div>
+        </div>
+        <div onclick="setQuickFilter('contacted_before')" class="glass-card p-3.5 rounded-xl cursor-pointer hover:border-indigo-500/50 transition">
+          <div class="text-xs text-indigo-300">✅ Đã tiếp cận (Zalo/DM)</div>
+          <div class="text-2xl font-extrabold text-indigo-400 mt-1" id="funnelContacted">0</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">Đã lưu lịch sử liên hệ</div>
+        </div>
+        <div onclick="setQuickFilter('interested')" class="glass-card p-3.5 rounded-xl cursor-pointer hover:border-amber-500/50 transition">
+          <div class="text-xs text-amber-300">🔥 Đang quan tâm khóa học</div>
+          <div class="text-2xl font-extrabold text-amber-400 mt-1" id="funnelInterested">0</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">Ưu tiên chốt đơn</div>
+        </div>
+        <div onclick="setQuickFilter('due_followup')" class="glass-card p-3.5 rounded-xl cursor-pointer hover:border-rose-500/50 transition">
+          <div class="text-xs text-rose-300">⏰ Hẹn liên hệ lại hôm nay</div>
+          <div class="text-2xl font-extrabold text-rose-400 mt-1" id="funnelFollowUp">0</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">Đã chốt: <b id="funnelWon" class="text-emerald-400">0</b></div>
+        </div>
+      </div>
+
+      <!-- Bộ lọc tìm kiếm & Nền tảng MXH -->
+      <div class="glass-card p-4 rounded-xl flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2 flex-1">
+          <input id="filterSearch" oninput="loadLeads()" type="text" placeholder="Tìm tên HLV, @username, SĐT, ghi chú..."
+            class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white w-56 focus:outline-none focus:border-cyan-400" />
+
+          <select id="filterLeadType" onchange="loadLeads()" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-cyan-300 font-semibold">
+            <option value="">👥 Cả Cá nhân (B2C) & CLB (B2B)</option>
+            <option value="B2C">👤 Chỉ Khách hàng Cá nhân (B2C)</option>
+            <option value="B2B">🏢 Chỉ Câu lạc bộ / Phòng tập (B2B)</option>
+          </select>
+
+          <select id="filterPlatform" onchange="loadLeads()" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+            <option value="">🌐 Tất cả Nền tảng MXH</option>
+            <option value="tiktok">🎵 TikTok (@creator)</option>
+            <option value="facebook">📘 Facebook (Cá nhân/Group)</option>
+            <option value="instagram">📸 Instagram / Threads</option>
+            <option value="telegram">✈️ Telegram (t.me)</option>
+            <option value="x">🐦 X (Twitter)</option>
+            <option value="youtube">▶️ YouTube</option>
+            <option value="google_maps">📍 Google Maps (CLB)</option>
+          </select>
+
+          <select id="filterSport" onchange="loadLeads()" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+            <option value="">Tất cả Bộ môn VTC</option>
+            <option value="gym">🏋️ Thể hình & Fitness (Gym)</option>
+            <option value="yoga">🧘 Yoga & Pilates</option>
+            <option value="dance">💃 Dân vũ & Vũ đạo (Zumba/Shuffle)</option>
+            <option value="martial_arts">🥋 Võ cổ truyền & Võ thuật</option>
+          </select>
+
+          <select id="filterApproach" onchange="loadLeads()" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+            <option value="">Mọi lịch sử tiếp cận</option>
+            <option value="uncontacted">🆕 Chưa từng tiếp cận</option>
+            <option value="contacted_before">✅ Đã từng tiếp cận</option>
+            <option value="due_followup">⏰ Đến hạn gọi lại hôm nay</option>
+          </select>
+
+          <select id="filterStatus" onchange="loadLeads()" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+            <option value="">Mọi trạng thái</option>
+            <option value="new">Mới quét</option>
+            <option value="contacted">Đã gửi Zalo / Đã nhắn DM</option>
+            <option value="interested">Quan tâm khóa học</option>
+            <option value="follow_up">Hẹn liên hệ lại</option>
+            <option value="closed_won">Đã chốt học viên</option>
+            <option value="closed_lost">Từ chối / Đã có bằng</option>
+          </select>
+
+          <input id="filterProvince" oninput="loadLeads()" type="text" placeholder="Tỉnh/Thành..."
+            class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white w-28" />
+
+          <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer select-none">
+            <input id="filterOnlyMobile" onchange="loadLeads()" type="checkbox" class="rounded bg-slate-900 border-slate-700 text-cyan-500" />
+            <span>Chỉ có SĐT Zalo</span>
+          </label>
+        </div>
+
+        <button onclick="openAddLeadModal()" class="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition shadow">
+          + Thêm Học Viên / CLB
+        </button>
+      </div>
+
+      <!-- Bảng danh sách Học viên Cá nhân & CLB -->
+      <div class="glass-card rounded-xl overflow-hidden">
+        <div class="overflow-x-auto custom-scroll">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-900/90 text-slate-400 text-xs uppercase border-b border-slate-800">
+                <th class="py-3 px-4">Học viên Cá nhân (B2C) / Cơ sở (B2B)</th>
+                <th class="py-3 px-3">Nền tảng & Bộ môn</th>
+                <th class="py-3 px-3">Liên hệ (Zalo / SĐT / Nick MXH)</th>
+                <th class="py-3 px-3">Lịch sử Tiếp cận</th>
+                <th class="py-3 px-3">Độ tiềm năng</th>
+                <th class="py-3 px-3">Tiểu sử Bio / Ghi chú & Lịch hẹn</th>
+                <th class="py-3 px-4 text-right">Thao tác Chốt đơn</th>
+              </tr>
+            </thead>
+            <tbody id="leadsTableBody" class="divide-y divide-slate-800/70 text-sm"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 2: BỘ MÁY SĂN HỌC VIÊN CÁ NHÂN (B2C) ĐA MẠNG XÃ HỘI & CLB -->
+    <!-- ========================================================================= -->
+    <section id="tab-crawler" class="hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Cột cấu hình chiến dịch quét (5 cols) -->
+        <div class="lg:col-span-5 glass-card p-5 rounded-xl space-y-4">
+          <div>
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              🌐 Săn Học Viên Cá Nhân (B2C) Đa Mạng Xã Hội
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">
+              Tìm trực tiếp các PT tự do, Cô giáo Yoga, Giáo viên Zumba/Shuffle Dance, người tìm việc HLV hoặc người đang hỏi mua chứng chỉ trên Facebook, TikTok, Instagram, X, Telegram.
+            </p>
+          </div>
+
+          <div class="space-y-3.5">
+            <div>
+              <label class="text-xs font-semibold text-cyan-300 block mb-1">1. Chọn Đối tượng & Hành vi Khách hàng mục tiêu</label>
+              <select id="crawlTargetMode" onchange="applyPresetKeyword()" class="w-full bg-slate-900 border border-cyan-500/40 rounded-lg px-3 py-2.5 text-sm text-white font-medium">
+                <option value="b2c_all">👤 [Cá nhân B2C - Tổng hợp] Quét tất cả HLV tự do + Tìm việc + Cần học chứng chỉ</option>
+                <option value="b2c_creators">🎵 [Cá nhân B2C - Creators] Săn Bio PT tự do, Cô giáo Yoga, Giáo viên Zumba/Shuffle trên TikTok, IG, FB</option>
+                <option value="b2c_job_seekers">💼 [Cá nhân B2C - Tìm việc] Săn người đăng bài tìm việc PT / HLV / Nhận dạy kèm 1:1</option>
+                <option value="b2c_cert_hunters">🔥 [Cá nhân B2C - Chốt nóng] Săn người đang hỏi chỗ học / thi Chứng chỉ HLV TDTT</option>
+                <option value="hybrid">🚀 [Kết hợp B2C + B2B] Quét cả Học viên Cá nhân MXH + Câu lạc bộ Google Maps</option>
+                <option value="b2b_maps">🏢 [Chỉ CLB/Phòng tập B2B] Quét Google Maps các Phòng Gym, Yoga, CLB Dance</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="text-xs font-semibold text-slate-300 block mb-1.5">2. Chọn các Nền tảng Mạng xã hội muốn quét</label>
+              <div class="grid grid-cols-3 gap-2 text-xs bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <label class="flex items-center gap-2 cursor-pointer text-slate-200">
+                  <input type="checkbox" class="crawl-pf-cb rounded" value="tiktok" checked /> 🎵 TikTok
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer text-slate-200">
+                  <input type="checkbox" class="crawl-pf-cb rounded" value="facebook" checked /> 📘 Facebook
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer text-slate-200">
+                  <input type="checkbox" class="crawl-pf-cb rounded" value="instagram" checked /> 📸 Instagram
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer text-slate-200">
+                  <input type="checkbox" class="crawl-pf-cb rounded" value="telegram" checked /> ✈️ Telegram
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer text-slate-200">
+                  <input type="checkbox" class="crawl-pf-cb rounded" value="x" checked /> 🐦 X (Twitter)
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer text-slate-200">
+                  <input type="checkbox" class="crawl-pf-cb rounded" value="youtube" checked /> ▶️ YouTube
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label class="text-xs font-semibold text-slate-300 block mb-1">3. Chọn Bộ môn VTC cần tuyển sinh</label>
+              <select id="crawlSport" onchange="applyPresetKeyword()" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+                <option value="gym">🏋️ Thể dục thể hình & Fitness (PT Gym)</option>
+                <option value="yoga">🧘 Huấn luyện viên Yoga</option>
+                <option value="dance">💃 Dân vũ & Vũ đạo giải trí (Zumba, Shuffle Dance, Aerobic)</option>
+                <option value="martial_arts">🥋 Võ cổ truyền & Võ thuật</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="text-xs font-semibold text-slate-300 block mb-1">4. Từ khóa săn học viên (Bấm chọn nhanh gợi ý bên dưới)</label>
+              <input id="crawlKeyword" type="text" value="PT tự do nhận dạy kèm 1:1"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+              <div id="keywordPresetPills" class="flex flex-wrap gap-1.5 mt-2"></div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-semibold text-slate-300 block mb-1">5. Khu vực / Tỉnh thành</label>
+                <input id="crawlProvince" type="text" value="Hà Nội" placeholder="Hà Nội, TP HCM, Hải Phòng..."
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-slate-300 block mb-1">Số lượng mục tiêu / đợt</label>
+                <select id="crawlMaxResults" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+                  <option value="20">20 hồ sơ (Nhanh)</option>
+                  <option value="35" selected>35 hồ sơ (Tiêu chuẩn)</option>
+                  <option value="60">60 hồ sơ (Quét sâu)</option>
+                </select>
+              </div>
+            </div>
+
+            <button id="btnStartCrawl" onclick="startCrawler()"
+              class="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 font-bold text-sm text-white shadow-lg shadow-cyan-500/20 transition">
+              🔍 Bắt Đầu Săn Học Viên Cá Nhân & Chống Trùng Lặp
+            </button>
+          </div>
+        </div>
+
+        <!-- Cột Màn hình Theo dõi Tiến trình Quét Real-time (7 cols) -->
+        <div class="lg:col-span-7 glass-card p-5 rounded-xl flex flex-col justify-between space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <h3 class="text-base font-bold text-white">📡 Màn hình Theo dõi Tiến trình Săn Học Viên (Real-time)</h3>
+              <p class="text-xs text-slate-400" id="crawlStatusSubtitle">Sẵn sàng khởi chạy chiến dịch mới.</p>
+            </div>
+            <div class="flex items-center gap-3 text-xs">
+              <span class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300">Tìm thấy: <b id="crawlFoundCount" class="text-white">0</b></span>
+              <span class="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300">Lead Mới: <b id="crawlNewCount">0</b></span>
+              <span class="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300">Đã có (Bỏ qua trùng): <b id="crawlDupCount">0</b></span>
+            </div>
+          </div>
+
+          <div id="crawlLogsBox" class="bg-slate-950 border border-slate-800 rounded-xl p-4 h-80 overflow-y-auto font-mono text-xs text-slate-300 space-y-1.5 custom-scroll">
+            <div class="text-slate-500">Chọn chế độ Săn Học Viên Cá Nhân (B2C) và các mạng xã hội bên trái rồi bấm "Bắt Đầu Săn Học Viên"...</div>
+          </div>
+
+          <!-- Lịch sử các chiến dịch đã quét -->
+          <div>
+            <h4 class="text-xs font-bold uppercase text-slate-400 mb-2">Lịch sử các chiến dịch đã quét (Tự động chống trùng SĐT & @handle MXH)</h4>
+            <div class="overflow-x-auto max-h-44 custom-scroll">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="text-slate-400 border-b border-slate-800">
+                    <th class="py-2">Thời gian</th>
+                    <th class="py-2">Bộ môn & Nền tảng</th>
+                    <th class="py-2">Từ khóa & Khu vực</th>
+                    <th class="py-2">Kết quả</th>
+                    <th class="py-2">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody id="campaignsHistoryBody" class="divide-y divide-slate-800/60"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 3: QUẢN LÝ 100 HỌC VIÊN ĐÃ CHỐT & HỒ SƠ CHỨNG CHỈ VTC -->
+    <!-- ========================================================================= -->
+    <section id="tab-students" class="hidden space-y-5">
+      <div class="glass-card p-4 rounded-xl flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-base font-bold text-white">🎓 Danh Sách Học Viên Đăng Ký Chứng Chỉ Cục TDTT (KPI 100 HV/Tháng)</h2>
+          <p class="text-xs text-slate-400">Quản lý tiến độ đóng học phí (~6.500.000đ/khóa) và 4 loại giấy tờ bắt buộc: Đơn đăng ký, CCCD công chứng, Bằng THPT trở lên, Ảnh 3x4.</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <input id="studentFilterMonth" onchange="loadStudents()" type="month"
+            class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+
+          <select id="studentFilterSport" onchange="loadStudents()" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+            <option value="">Tất cả khóa học</option>
+            <option value="gym">Thể hình & Fitness</option>
+            <option value="yoga">Yoga</option>
+            <option value="dance">Dân vũ & Vũ đạo</option>
+            <option value="martial_arts">Võ cổ truyền</option>
+          </select>
+
+          <button onclick="openEnrollModal()" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-bold text-white shadow">
+            + Thêm Học Viên Đã Chốt Đơn
+          </button>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-xl overflow-hidden">
+        <div class="overflow-x-auto custom-scroll">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-900/90 text-slate-400 text-xs uppercase border-b border-slate-800">
+                <th class="py-3 px-4">Học viên & SĐT</th>
+                <th class="py-3 px-3">Nguồn (Cá nhân B2C / CLB B2B)</th>
+                <th class="py-3 px-3">Khóa học & Tháng KPI</th>
+                <th class="py-3 px-3">Học phí & Đã thu</th>
+                <th class="py-3 px-3">Checklist Hồ Sơ VTC (Click để tích)</th>
+                <th class="py-3 px-3">Trạng thái Học & Thi</th>
+                <th class="py-3 px-4 text-right">Xóa</th>
+              </tr>
+            </thead>
+            <tbody id="studentsTableBody" class="divide-y divide-slate-800/70 text-sm"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 4: KHO KỊCH BẢN CHỐT ĐƠN CÁ NHÂN (B2C) & CƠ SỞ (B2B) -->
+    <!-- ========================================================================= -->
+    <section id="tab-playbook" class="hidden space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="glass-card p-5 rounded-xl border-l-4 border-l-cyan-400">
+          <h3 class="font-bold text-sm text-cyan-300 uppercase">1. Săn Cá Nhân trên TikTok, IG, FB, Telegram (B2C)</h3>
+          <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+            Các <b>PT tự do, Cô giáo Yoga, Giáo viên Zumba/Shuffle Dance</b> rất tích cực đăng video dạy học trên TikTok, Reels, Instagram. Khen kênh của họ và giới thiệu khóa <b>Chứng chỉ Cục TDTT học Lý thuyết Online</b> giúp tỷ lệ phản hồi tin nhắn đạt trên 40%.
+          </p>
+        </div>
+        <div class="glass-card p-5 rounded-xl border-l-4 border-l-emerald-400">
+          <h3 class="font-bold text-sm text-emerald-300 uppercase">2. Đánh Trúng Tâm Lý Người Tìm Việc HLV</h3>
+          <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+            Những bạn trẻ đăng bài tìm việc PT/Yoga trên Group Facebook hoặc Telegram thường bị các phòng tập lớn từ chối hoặc ép lương vì chưa có <b>Giấy chứng nhận chuyên môn của Cục TDTT Việt Nam</b>.
+          </p>
+        </div>
+        <div class="glass-card p-5 rounded-xl border-l-4 border-l-purple-400">
+          <h3 class="font-bold text-sm text-purple-300 uppercase">3. Chốt Sỉ Chủ Phòng Tập / CLB (B2B)</h3>
+          <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+            Song song với khách cá nhân, mỗi Chủ phòng Gym/Yoga/CLB Dân vũ khi cần chuẩn hóa pháp lý theo Nghị định 36/2019/NĐ-CP sẽ đăng ký một lúc từ <b>3 – 5 học viên</b>.
+          </p>
+        </div>
+      </div>
+
+      <div class="glass-card p-5 rounded-xl space-y-4">
+        <div>
+          <h3 class="text-base font-bold text-white">💬 Kho Kịch Bản Nhắn Tin Cá Nhân (B2C DM/Zalo) & Chủ Cơ Sở (B2B)</h3>
+          <p class="text-xs text-slate-400">Khi bạn bấm vào 1 học viên cá nhân ở bảng CRM, phần mềm sẽ tự động chọn mẫu B2C tương ứng và điền sẵn tên + @username của khách.</p>
+        </div>
+        <div id="playbookList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL CHI TIẾT HỌC VIÊN / CƠ SỞ + GHI NHẬN TIẾP CẬN ĐA KÊNH -->
+  <!-- ========================================================================= -->
+  <div id="leadDetailModal" class="fixed inset-0 z-50 hidden bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+        <div>
+          <div class="flex items-center gap-2">
+            <span id="modalLeadSportBadge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">GYM</span>
+            <span id="modalLeadPlatformBadge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300">TIKTOK</span>
+          </div>
+          <h3 id="modalLeadName" class="text-lg font-bold text-white mt-1">Tên Học viên / Cơ sở</h3>
+          <p id="modalLeadAddress" class="text-xs text-slate-400"></p>
+        </div>
+        <button onclick="closeLeadDetailModal()" class="text-slate-400 hover:text-white text-2xl font-bold leading-none">&times;</button>
+      </div>
+
+      <div class="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-6 custom-scroll">
+        <!-- Cột trái: Kịch bản cá nhân hóa + Mở nhanh Zalo / TikTok / IG / FB / Telegram -->
+        <div class="space-y-4">
+          <div class="bg-slate-800/70 border border-slate-700 rounded-xl p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold uppercase text-cyan-400">1. Kịch bản tư vấn cá nhân hóa (Zalo / DM MXH)</span>
+              <button onclick="copyGeneratedScript()" class="px-2.5 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white">
+                📋 Copy Tin Nhắn
+              </button>
+            </div>
+            <textarea id="modalGeneratedScript" rows="6"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-slate-200 leading-relaxed focus:outline-none focus:border-cyan-400"></textarea>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <a id="modalZaloDirectBtn" href="#" target="_blank" onclick="copyGeneratedScript()"
+                class="flex-1 py-2.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-center text-xs font-bold text-white transition">
+                💬 Copy & Mở Zalo
+              </a>
+              <a id="modalSocialDirectBtn" href="#" target="_blank" onclick="copyGeneratedScript()"
+                class="flex-1 py-2.5 px-3 rounded-lg bg-pink-600 hover:bg-pink-500 text-center text-xs font-bold text-white transition">
+                🌐 Copy & Mở Profile MXH (Gửi DM)
+              </a>
+            </div>
+          </div>
+
+          <!-- Form Ghi nhận Kết quả Tiếp cận Đa Kênh -->
+          <div class="bg-slate-800/70 border border-slate-700 rounded-xl p-4 space-y-3">
+            <h4 class="text-xs font-bold uppercase text-emerald-400">2. Lưu Lịch Sử Tiếp Cận (Tránh nhắn trùng về sau)</h4>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Kênh vừa liên hệ</label>
+                <select id="logChannel" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white">
+                  <option value="zalo">💬 Nhắn / Gọi Zalo</option>
+                  <option value="tiktok_dm">🎵 Nhắn TikTok DM / Bình luận</option>
+                  <option value="facebook_msg">📘 Nhắn Facebook Messenger</option>
+                  <option value="instagram_dm">📸 Nhắn Instagram DM</option>
+                  <option value="telegram_msg">✈️ Nhắn Telegram</option>
+                  <option value="x_dm">🐦 Nhắn X (Twitter)</option>
+                  <option value="call">📞 Gọi điện thoại trực tiếp</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Kết quả phản hồi</label>
+                <select id="logOutcome" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white">
+                  <option value="sent_zalo">Đã gửi tin nhắn (Zalo / DM MXH)</option>
+                  <option value="answered_interested">Khách quan tâm - Đang hỏi lịch thi</option>
+                  <option value="callback_later">Hẹn đợt sau / Đang suy nghĩ</option>
+                  <option value="no_answer">Chưa xem tin nhắn / Chưa nghe máy</option>
+                  <option value="already_certified">Đã có chứng chỉ Cục TDTT</option>
+                  <option value="enrolled">Đã chốt đăng ký học viên!</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Cập nhật SĐT Zalo (nếu mới xin được từ DM)</label>
+                <input id="modalUpdatePhone" type="text" placeholder="Nhập SĐT khách vừa cho..."
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-emerald-400 font-mono" />
+              </div>
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Lịch hẹn nhắn/gọi lại</label>
+                <input id="logNextFollowUp" type="date"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white" />
+              </div>
+            </div>
+
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">Ghi chú chi tiết cuộc trò chuyện</label>
+              <input id="logNote" type="text" placeholder="VD: Đã nhắn TikTok DM, bạn ấy xin Zalo gửi thông tin khóa tháng 11..."
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button onclick="submitOutreachLog()" class="flex-1 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white transition">
+                💾 Lưu Lịch Sử Tiếp Cận
+              </button>
+              <button onclick="openEnrollModalFromLead()" class="py-2.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-xs font-bold text-slate-950 transition">
+                🎓 + Chốt Thành Học Viên Chính Thức
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cột phải: Timeline Lịch sử đã tiếp cận & Học viên đã chốt -->
+        <div class="space-y-4">
+          <div class="bg-slate-800/70 border border-slate-700 rounded-xl p-4">
+            <h4 class="text-xs font-bold uppercase text-slate-300 mb-3">🕒 Nhật ký các lần đã tiếp cận (Zalo / TikTok / FB / IG / Telegram)</h4>
+            <div id="modalOutreachTimeline" class="space-y-2.5 max-h-60 overflow-y-auto custom-scroll pr-1"></div>
+          </div>
+
+          <div class="bg-slate-800/70 border border-slate-700 rounded-xl p-4">
+            <h4 class="text-xs font-bold uppercase text-emerald-300 mb-3">🎓 Học viên đã chốt đăng ký từ hồ sơ này</h4>
+            <div id="modalLeadStudents" class="space-y-2 max-h-48 overflow-y-auto custom-scroll"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL THÊM HỌC VIÊN ĐÃ CHỐT -->
+  <div id="enrollModal" class="fixed inset-0 z-50 hidden bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white">🎓 Ghi Nhận Học Viên Đăng Ký Khóa Học VTC</h3>
+        <button onclick="closeEnrollModal()" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+      </div>
+
+      <input type="hidden" id="enrollLeadId" value="" />
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">Họ và tên Học viên *</label>
+          <input id="enrollFullName" type="text" placeholder="Nguyễn Văn A"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">Số điện thoại / Zalo *</label>
+          <input id="enrollPhone" type="text" placeholder="098xxxxxxx"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">Bộ môn đăng ký *</label>
+          <select id="enrollSport" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+            <option value="gym">Thể dục thể hình & Fitness</option>
+            <option value="yoga">Huấn luyện viên Yoga</option>
+            <option value="dance">Dân vũ & Vũ đạo giải trí</option>
+            <option value="martial_arts">Võ cổ truyền</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">Tháng tính KPI *</label>
+          <input id="enrollBatchMonth" type="month"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">Học phí (VNĐ)</label>
+          <input id="enrollTuition" type="number" value="6500000"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">Ưu đãi giảm (VNĐ)</label>
+          <input id="enrollDiscount" type="number" value="0"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">Đã thu/Cọc (VNĐ)</label>
+          <input id="enrollPaid" type="number" value="6500000"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+        </div>
+      </div>
+
+      <div>
+        <label class="text-xs text-slate-300 block mb-1.5">Hồ sơ học viên đã nộp (Theo quy định Học viện Thể thao VTC):</label>
+        <div class="grid grid-cols-2 gap-2 text-xs text-slate-200 bg-slate-950 p-3 rounded-lg border border-slate-800">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="enrollDocForm" checked /> Đơn đăng ký tham gia
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="enrollDocCccd" /> Bản sao công chứng CCCD
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="enrollDocDiploma" /> Bằng THPT/TC/CĐ/ĐH
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="enrollDocPhoto" /> Ảnh thẻ 3x4 nền trắng
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <label class="text-xs text-slate-300 block mb-1">Ghi chú học viên</label>
+        <input id="enrollNotes" type="text" placeholder="VD: Học viên cá nhân từ TikTok..."
+          class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeEnrollModal()" class="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Hủy</button>
+        <button onclick="submitEnrollStudent()" class="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white">
+          ✅ Lưu Học Viên & Cộng KPI Tháng
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL THÊM HỌC VIÊN CÁ NHÂN / CƠ SỞ THỦ CÔNG -->
+  <div id="addLeadModal" class="fixed inset-0 z-50 hidden bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white">+ Thêm Học Viên Cá Nhân (B2C) / CLB (B2B)</h3>
+        <button onclick="closeAddLeadModal()" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-3">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-300 block mb-1">Phân loại khách hàng</label>
+            <select id="newLeadType" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-cyan-300 font-semibold">
+              <option value="B2C">👤 Khách hàng Cá nhân (B2C)</option>
+              <option value="B2B">🏢 Cơ sở / CLB (B2B)</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-300 block mb-1">Nền tảng MXH</label>
+            <select id="newLeadPlatform" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="tiktok">🎵 TikTok</option>
+              <option value="facebook">📘 Facebook</option>
+              <option value="instagram">📸 Instagram</option>
+              <option value="telegram">✈️ Telegram</option>
+              <option value="x">🐦 X (Twitter)</option>
+              <option value="google_maps">📍 Google Maps</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">Họ tên Cá nhân / Tên Kênh / CLB *</label>
+          <input id="newLeadName" type="text" placeholder="VD: PT Nguyễn Tuấn / Cô giáo Yoga Lan"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-300 block mb-1">Số điện thoại / Zalo (nếu có)</label>
+            <input id="newLeadPhone" type="text" placeholder="098xxxxxxx"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-300 block mb-1">Nick MXH (@handle)</label>
+            <input id="newLeadHandle" type="text" placeholder="VD: @tuanpt_fitness"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-300 block mb-1">Bộ môn VTC</label>
+            <select id="newLeadSport" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="gym">Thể hình & Fitness (Gym)</option>
+              <option value="yoga">Yoga</option>
+              <option value="dance">Dân vũ & Vũ đạo (Zumba/Shuffle)</option>
+              <option value="martial_arts">Võ cổ truyền</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-300 block mb-1">Tỉnh / Thành phố</label>
+            <input id="newLeadProvince" type="text" value="Hà Nội"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">Link Profile MXH (TikTok / FB / IG / Telegram URL)</label>
+          <input id="newLeadSocialUrl" type="text" placeholder="https://www.tiktok.com/@..."
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">Tiểu sử Bio / Ghi chú nhu cầu</label>
+          <input id="newLeadNotes" type="text" placeholder="VD: Nhận dạy kèm PT 1-1, chưa có bằng Cục TDTT..."
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeAddLeadModal()" class="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Hủy</button>
+        <button onclick="submitNewLead()" class="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white">
+          Lưu Vào CRM
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toastBox" class="fixed bottom-5 right-5 z-50 hidden px-4 py-3 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow-xl"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
