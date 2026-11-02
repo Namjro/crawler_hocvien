@@ -1,6 +1,22 @@
 const express = require('express');
 const XLSX = require('xlsx');
-const { db, upsertLead, addOutreachLog, backupDatabase } = require('../db/database');
+const {
+  db,
+  upsertLead,
+  addLeadEvidence,
+  addOutreachLog,
+  deleteLeadById,
+  clearAllData,
+  purgeInvalidLeads,
+  getSetting,
+  setSetting,
+  backupDatabase
+} = require('../db/database');
+const {
+  getCloudSyncStatus,
+  clearCloudData,
+  syncWithCloud
+} = require('../db/cloudSync');
 const {
   SPORT_KEYWORDS_PRESETS,
   B2C_SPORT_KEYWORDS,
@@ -11,7 +27,7 @@ const {
 const router = express.Router();
 
 /**
- * 1. API THỐNG KÊ KPI 100 HỌC VIÊN / THÁNG & DASHBOARD ĐA NỀN TẢNG
+ * 1. API THỐNG KÊ KPI 100 HỌC VIÊN / THÁNG & TÁCH RIÊNG 2 PHÂN HỆ (B2B vs B2C)
  */
 router.get('/dashboard/kpi', (req, res) => {
   try {
@@ -27,77 +43,65 @@ router.get('/dashboard/kpi', (req, res) => {
       WHERE batch_month = ?
     `).get(currentMonth);
 
-    const studentsBySport = db.prepare(`
-      SELECT sport_course, COUNT(*) as count
-      FROM students
-      WHERE batch_month = ?
-      GROUP BY sport_course
-    `).all(currentMonth);
-
-    const funnelRows = db.prepare(`
-      SELECT status, COUNT(*) as count, COALESCE(SUM(expected_students), 0) as potential_students
+    // Thống kê tách biệt hoàn toàn giữa B2B (Cơ sở tập luyện) và B2C (Khách hàng cá nhân)
+    const splitRows = db.prepare(`
+      SELECT
+        lead_type,
+        status,
+        COUNT(*) as count,
+        COALESCE(SUM(expected_students), 0) as potential_students
       FROM leads
-      GROUP BY status
+      GROUP BY lead_type, status
     `).all();
 
-    const typeRows = db.prepare(`
-      SELECT lead_type, COUNT(*) as count FROM leads GROUP BY lead_type
-    `).all();
-
-    const platformRows = db.prepare(`
-      SELECT platform, COUNT(*) as count FROM leads GROUP BY platform
-    `).all();
-
-    const funnel = {
-      total_leads: 0,
-      b2c_count: 0,
-      b2b_count: 0,
+    const makeHubSummary = () => ({
+      total: 0,
       new: 0,
       contacted: 0,
       interested: 0,
       follow_up: 0,
       closed_won: 0,
       closed_lost: 0,
-      total_potential_students: 0,
-      by_platform: {}
-    };
+      potential_students: 0,
+      due_today: 0
+    });
 
-    for (const r of funnelRows) {
-      funnel.total_leads += r.count;
-      funnel[r.status] = r.count;
+    const b2b_hub = makeHubSummary();
+    const b2c_hub = makeHubSummary();
+
+    for (const r of splitRows) {
+      const target = r.lead_type === 'B2C' ? b2c_hub : b2b_hub;
+      target.total += r.count;
+      target[r.status] = (target[r.status] || 0) + r.count;
       if (r.status !== 'closed_lost') {
-        funnel.total_potential_students += r.potential_students;
+        target.potential_students += r.potential_students;
       }
     }
 
-    for (const t of typeRows) {
-      if (t.lead_type === 'B2C') funnel.b2c_count = t.count;
-      if (t.lead_type === 'B2B') funnel.b2b_count = t.count;
-    }
+    b2b_hub.due_today = db.prepare(`
+      SELECT COUNT(*) as cnt FROM leads
+      WHERE lead_type = 'B2B' AND next_follow_up_at IS NOT NULL AND next_follow_up_at != ''
+        AND date(next_follow_up_at) <= date(?) AND status NOT IN ('closed_won', 'closed_lost')
+    `).get(today).cnt;
 
+    b2c_hub.due_today = db.prepare(`
+      SELECT COUNT(*) as cnt FROM leads
+      WHERE lead_type = 'B2C' AND next_follow_up_at IS NOT NULL AND next_follow_up_at != ''
+        AND date(next_follow_up_at) <= date(?) AND status NOT IN ('closed_won', 'closed_lost')
+    `).get(today).cnt;
+
+    const platformRows = db.prepare(`
+      SELECT platform, COUNT(*) as count FROM leads WHERE lead_type = 'B2C' GROUP BY platform
+    `).all();
+
+    const b2c_by_platform = {};
     for (const p of platformRows) {
-      funnel.by_platform[p.platform || 'web'] = p.count;
+      b2c_by_platform[p.platform || 'web'] = p.count;
     }
 
     const todayOutreach = db.prepare(`
       SELECT COUNT(*) as count FROM outreach_logs WHERE date(created_at) = date('now', 'localtime')
     `).get().count;
-
-    const monthOutreach = db.prepare(`
-      SELECT COUNT(*) as count FROM outreach_logs WHERE strftime('%Y-%m', created_at) = ?
-    `).get(currentMonth).count;
-
-    const followUpsDue = db.prepare(`
-      SELECT id, name, lead_type, sport_category, platform, social_handle, social_url, phone, zalo_url,
-             province, contact_person, status, expected_students, next_follow_up_at, last_contacted_at, notes
-      FROM leads
-      WHERE next_follow_up_at IS NOT NULL
-        AND next_follow_up_at != ''
-        AND date(next_follow_up_at) <= date(?)
-        AND status NOT IN ('closed_won', 'closed_lost')
-      ORDER BY date(next_follow_up_at) ASC, potential_score DESC
-      LIMIT 25
-    `).all(today);
 
     res.json({
       month: currentMonth,
@@ -106,11 +110,16 @@ router.get('/dashboard/kpi', (req, res) => {
       kpi_percentage: Math.min(100, Math.round(((studentStats.enrolled_count || 0) / 100) * 100)),
       expected_revenue: studentStats.expected_revenue || 0,
       collected_revenue: studentStats.collected_revenue || 0,
-      students_by_sport: studentsBySport,
-      funnel,
+      b2b_hub,
+      b2c_hub,
+      b2c_by_platform,
+      funnel: {
+        total_leads: b2b_hub.total + b2c_hub.total,
+        b2b_count: b2b_hub.total,
+        b2c_count: b2c_hub.total
+      },
       today_outreach: todayOutreach,
-      month_outreach: monthOutreach,
-      follow_ups_due: followUpsDue
+      cloud_status: getCloudSyncStatus(process.env.PORT || 3000)
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -118,18 +127,20 @@ router.get('/dashboard/kpi', (req, res) => {
 });
 
 /**
- * 2. API DANH SÁCH & BỘ LỌC KHÁCH HÀNG CÁ NHÂN (B2C) + CƠ SỞ (B2B) ĐA NỀN TẢNG
+ * 2. API TRUY VẤN RIÊNG CHO TỪNG PHÂN HỆ (B2B CƠ SỞ TẬP LUYỆN / B2C KHÁCH CÁ NHÂN)
  */
 router.get('/leads', (req, res) => {
   try {
+    purgeInvalidLeads();
     const {
       search = '',
       sport_category = '',
       status = '',
       province = '',
-      lead_type = '', // 'B2C' hoặc 'B2B'
-      platform = '', // 'tiktok', 'facebook', 'instagram', 'telegram', 'x', 'youtube', 'google_maps'
-      lead_intent = '', // 'cert_hunter', 'freelance_coach', 'job_seeker', 'facility'
+      lead_type = '', // 'B2B' hoặc 'B2C'
+      platform = '', // 'tiktok', 'facebook', 'zalo', 'threads', 'instagram', 'telegram', 'x', 'youtube', 'linkedin', 'google_maps'
+      evidence_type = '', // 'post_teaching', 'post_job_seeking', 'post_asking_cert', 'zalo_community', 'profile_bio', 'admissions_announcement'
+      source = '', // 'google_maps', 'admissions'
       approach_filter = '',
       only_mobile = ''
     } = req.query;
@@ -137,59 +148,66 @@ router.get('/leads', (req, res) => {
     const conditions = [];
     const params = [];
 
+    if (lead_type) {
+      conditions.push('l.lead_type = ?');
+      params.push(lead_type);
+    }
+
     if (search.trim()) {
-      conditions.push('(name LIKE ? OR phone LIKE ? OR social_handle LIKE ? OR address LIKE ? OR contact_person LIKE ? OR notes LIKE ?)');
+      conditions.push('(l.name LIKE ? OR l.phone LIKE ? OR l.social_handle LIKE ? OR l.evidence_snippet LIKE ? OR l.address LIKE ? OR l.contact_person LIKE ? OR l.notes LIKE ?)');
       const likeStr = `%${search.trim()}%`;
-      params.push(likeStr, likeStr, likeStr, likeStr, likeStr, likeStr);
+      params.push(likeStr, likeStr, likeStr, likeStr, likeStr, likeStr, likeStr);
     }
 
     if (sport_category) {
-      conditions.push('sport_category = ?');
+      conditions.push('l.sport_category = ?');
       params.push(sport_category);
     }
 
     if (status) {
-      conditions.push('status = ?');
+      conditions.push('l.status = ?');
       params.push(status);
     }
 
     if (province.trim()) {
-      conditions.push('province LIKE ?');
+      conditions.push('l.province LIKE ?');
       params.push(`%${province.trim()}%`);
     }
 
-    if (lead_type) {
-      conditions.push('lead_type = ?');
-      params.push(lead_type);
-    }
-
     if (platform) {
-      conditions.push('platform = ?');
+      conditions.push('l.platform = ?');
       params.push(platform);
     }
 
-    if (lead_intent) {
-      conditions.push('lead_intent = ?');
-      params.push(lead_intent);
+    if (evidence_type) {
+      conditions.push('l.evidence_type = ?');
+      params.push(evidence_type);
+    }
+
+    if (source === 'google_maps') {
+      conditions.push("l.source = 'google_maps'");
+    } else if (source === 'admissions') {
+      conditions.push("(l.source LIKE 'admissions%' OR l.lead_intent = 'admissions' OR l.evidence_type = 'admissions_announcement')");
     }
 
     if (only_mobile === '1') {
-      conditions.push('is_mobile = 1');
+      conditions.push('l.is_mobile = 1');
     }
 
     if (approach_filter === 'uncontacted') {
-      conditions.push("status = 'new' AND outreach_count = 0");
+      conditions.push("l.status = 'new' AND l.outreach_count = 0");
     } else if (approach_filter === 'contacted_before') {
-      conditions.push("(status != 'new' OR outreach_count > 0)");
+      conditions.push("(l.status != 'new' OR l.outreach_count > 0)");
     } else if (approach_filter === 'due_followup') {
-      conditions.push("next_follow_up_at IS NOT NULL AND next_follow_up_at != '' AND date(next_follow_up_at) <= date('now', 'localtime') AND status NOT IN ('closed_won', 'closed_lost')");
+      conditions.push("l.next_follow_up_at IS NOT NULL AND l.next_follow_up_at != '' AND date(l.next_follow_up_at) <= date('now', 'localtime') AND l.status NOT IN ('closed_won', 'closed_lost')");
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const leads = db.prepare(`
       SELECT l.*,
-        (SELECT COUNT(*) FROM students s WHERE s.lead_id = l.id) as enrolled_students_count
+        (SELECT COUNT(*) FROM students s WHERE s.lead_id = l.id) as enrolled_students_count,
+        (SELECT COUNT(*) FROM lead_evidences e WHERE e.lead_id = l.id) as evidence_count
       FROM leads l
       ${whereClause}
       ORDER BY
@@ -210,16 +228,48 @@ router.get('/leads', (req, res) => {
   }
 });
 
+/**
+ * Chi tiết 1 Cơ sở / Khách hàng Cá nhân + Danh sách Bằng chứng Bài viết + Nhật ký Tiếp cận + Học viên
+ */
 router.get('/leads/:id', (req, res) => {
   try {
     const id = Number(req.params.id);
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
     if (!lead) return res.status(404).json({ error: 'Không tìm thấy hồ sơ' });
 
+    const evidences = db.prepare('SELECT * FROM lead_evidences WHERE lead_id = ? ORDER BY id DESC').all(id);
     const logs = db.prepare('SELECT * FROM outreach_logs WHERE lead_id = ? ORDER BY id DESC').all(id);
     const students = db.prepare('SELECT * FROM students WHERE lead_id = ? ORDER BY id DESC').all(id);
 
-    res.json({ lead, logs, students });
+    res.json({ lead, evidences, logs, students });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Thêm Bằng chứng bài viết / video mới cho Khách hàng Cá nhân B2C
+ */
+router.post('/leads/:id/evidences', (req, res) => {
+  try {
+    const lead_id = Number(req.params.id);
+    const { platform = 'facebook', evidence_type = 'post_teaching', title = '', content_snippet = '', post_url = '' } = req.body;
+    if (!content_snippet.trim()) {
+      return res.status(400).json({ error: 'Vui lòng nhập nội dung trích dẫn bài viết/bằng chứng' });
+    }
+
+    addLeadEvidence({
+      lead_id,
+      platform,
+      evidence_type,
+      title,
+      content_snippet,
+      post_url
+    });
+
+    const evidences = db.prepare('SELECT * FROM lead_evidences WHERE lead_id = ? ORDER BY id DESC').all(lead_id);
+    const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead_id);
+    res.json({ lead, evidences });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -232,6 +282,8 @@ router.post('/leads', (req, res) => {
       source: req.body.source || 'manual'
     });
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(result.leadId);
+    // Tự động đồng bộ ngầm lên Cloud nếu đã cấu hình
+    syncWithCloud().catch(() => {});
     res.json({ result, lead });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -246,9 +298,9 @@ router.patch('/leads/:id', (req, res) => {
 
     const fields = [
       'name', 'lead_type', 'lead_intent', 'sport_category', 'platform',
-      'social_handle', 'social_url', 'phone', 'contact_person',
-      'address', 'province', 'district', 'facebook_url', 'website',
-      'status', 'expected_students', 'next_follow_up_at', 'notes'
+      'social_handle', 'social_url', 'evidence_type', 'evidence_snippet', 'evidence_url',
+      'phone', 'contact_person', 'address', 'province', 'district',
+      'facebook_url', 'website', 'status', 'expected_students', 'next_follow_up_at', 'notes'
     ];
 
     const updates = [];
@@ -267,16 +319,49 @@ router.patch('/leads/:id', (req, res) => {
     }
 
     const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
+    syncWithCloud().catch(() => {});
     res.json({ lead: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+/**
+ * API XÓA SẠCH DỮ LIỆU (ALL / B2B / B2C) & XÓA LẺ TỪNG HỒ SƠ
+ */
+function handleClearDataRequest(req, res) {
+  try {
+    const target =
+      (req.body && req.body.target) ||
+      req.query.target ||
+      req.params.target ||
+      'all';
+    const result = clearAllData(target);
+    clearCloudData(target).catch(() => {});
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+router.post('/data/clear', handleClearDataRequest);
+router.delete('/data/clear', handleClearDataRequest);
+router.get('/data/clear', handleClearDataRequest);
+router.post('/leads/clear', handleClearDataRequest);
+router.delete('/leads/clear', handleClearDataRequest);
+
 router.delete('/leads/:id', (req, res) => {
   try {
-    db.prepare('DELETE FROM leads WHERE id = ?').run(Number(req.params.id));
-    res.json({ success: true });
+    const rawId = String(req.params.id || '').trim();
+    if (['all', 'B2B', 'B2C', 'clear'].includes(rawId)) {
+      const target = rawId === 'clear' ? (req.query.target || 'all') : rawId;
+      const result = clearAllData(target);
+      clearCloudData(target).catch(() => {});
+      return res.json({ success: true, ...result });
+    }
+
+    const result = deleteLeadById(Number(rawId));
+    res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -301,6 +386,7 @@ router.post('/leads/:id/outreach', (req, res) => {
     });
 
     const logs = db.prepare('SELECT * FROM outreach_logs WHERE lead_id = ? ORDER BY id DESC').all(lead_id);
+    syncWithCloud().catch(() => {});
     res.json({ lead: updatedLead, logs });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -410,6 +496,7 @@ router.post('/students', (req, res) => {
     }
 
     const student = db.prepare('SELECT * FROM students WHERE id = ?').get(Number(result.lastInsertRowid));
+    syncWithCloud().catch(() => {});
     res.json({ student });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -440,6 +527,7 @@ router.patch('/students/:id', (req, res) => {
     }
 
     const student = db.prepare('SELECT * FROM students WHERE id = ?').get(id);
+    syncWithCloud().catch(() => {});
     res.json({ student });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -456,7 +544,54 @@ router.delete('/students/:id', (req, res) => {
 });
 
 /**
- * 5. API KỊCH BẢN CHỐT ĐƠN VTC (B2C CÁ NHÂN + B2B CƠ SỞ)
+ * 5. API KẾT NỐI CLOUD DATABASE (SUPABASE / NEON) & ĐỒNG BỘ ĐA THIẾT BỊ
+ */
+router.get('/cloud/status', (req, res) => {
+  res.json(getCloudSyncStatus(process.env.PORT || 3000));
+});
+
+router.post('/cloud/config', async (req, res) => {
+  try {
+    const { cloud_postgres_url = '', device_name = '' } = req.body;
+    if (device_name.trim()) {
+      setSetting('device_name', device_name.trim());
+    }
+    if (cloud_postgres_url !== undefined) {
+      setSetting('cloud_postgres_url', cloud_postgres_url.trim());
+    }
+
+    if (cloud_postgres_url.trim()) {
+      const syncResult = await syncWithCloud(cloud_postgres_url.trim());
+      return res.json({
+        saved: true,
+        status: getCloudSyncStatus(process.env.PORT || 3000),
+        syncResult
+      });
+    }
+
+    res.json({
+      saved: true,
+      status: getCloudSyncStatus(process.env.PORT || 3000)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/cloud/sync', async (req, res) => {
+  try {
+    const syncResult = await syncWithCloud();
+    res.json({
+      status: getCloudSyncStatus(process.env.PORT || 3000),
+      syncResult
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * 6. API KỊCH BẢN CHỐT ĐƠN VTC & BỘ MÁY QUÉT
  */
 router.get('/scripts', (req, res) => {
   try {
@@ -467,23 +602,6 @@ router.get('/scripts', (req, res) => {
   }
 });
 
-router.post('/scripts', (req, res) => {
-  try {
-    const { title, sport_category = 'all', target_type = 'B2C', stage = 'first_touch', content } = req.body;
-    const r = db.prepare(`
-      INSERT INTO script_templates (title, sport_category, target_type, stage, content)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(title, sport_category, target_type, stage, content);
-    const script = db.prepare('SELECT * FROM script_templates WHERE id = ?').get(Number(r.lastInsertRowid));
-    res.json({ script });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * 6. API ĐIỀU KHIỂN BỘ MÁY QUÉT ĐA NỀN TẢNG (B2C SOCIAL + B2B MAPS)
- */
 router.get('/crawler/presets', (req, res) => {
   const campaigns = db.prepare('SELECT * FROM crawl_campaigns ORDER BY id DESC LIMIT 20').all();
   res.json({
@@ -520,6 +638,8 @@ router.post('/crawler/start', (req, res) => {
       targetMode,
       platforms,
       maxResults: Number(maxResults) || 25
+    }).then(() => {
+      syncWithCloud().catch(() => {});
     }).catch((err) => {
       console.error('Background crawl error:', err);
     });
@@ -534,29 +654,50 @@ router.post('/crawler/start', (req, res) => {
 });
 
 /**
- * 7. API XUẤT FILE EXCEL (.XLSX)
+ * 7. API XUẤT FILE EXCEL (.XLSX) TÁCH RIÊNG 3 SHEET: CƠ SỞ B2B, CÁ NHÂN B2C, HỌC VIÊN KPI
  */
 router.get('/export/excel', (req, res) => {
   try {
-    const leads = db.prepare(`
+    const b2bLeads = db.prepare(`
       SELECT
-        id as "Mã ID",
-        name as "Tên Học viên Cá nhân / Cơ sở",
-        lead_type as "Phân loại (B2C/B2B)",
-        lead_intent as "Nhóm nhu cầu",
-        platform as "Nền tảng MXH",
-        social_handle as "Tài khoản MXH (@handle)",
-        social_url as "Link Profile MXH",
+        id as "Mã Cơ sở",
+        name as "Tên Phòng tập / CLB (B2B)",
         sport_category as "Bộ môn VTC",
-        phone as "SĐT Chính",
-        zalo_url as "Link Zalo",
+        phone as "Hotline / Zalo",
+        contact_person as "Người quản lý",
+        expected_students as "Quy mô dự kiến (HV)",
         status as "Trạng thái tiếp cận",
         outreach_count as "Số lần đã liên hệ",
-        last_contacted_at as "Lần liên hệ gần nhất",
+        last_contacted_at as "Liên hệ gần nhất",
         next_follow_up_at as "Lịch hẹn gọi lại",
         province as "Tỉnh/Thành",
-        notes as "Tiểu sử Bio / Ghi chú"
+        address as "Địa chỉ mặt bằng",
+        rating as "Điểm Maps",
+        review_count as "Số đánh giá",
+        notes as "Ghi chú chăm sóc"
       FROM leads
+      WHERE lead_type = 'B2B'
+      ORDER BY id DESC
+    `).all();
+
+    const b2cLeads = db.prepare(`
+      SELECT
+        id as "Mã Cá nhân",
+        name as "Họ tên / Kênh Cá nhân (B2C)",
+        platform as "Nền tảng MXH",
+        social_handle as "Nick (@handle)",
+        sport_category as "Bộ môn VTC",
+        phone as "SĐT Zalo",
+        evidence_type as "Loại bằng chứng",
+        evidence_snippet as "Bằng chứng Bài viết / Hoạt động cá nhân",
+        evidence_url as "Link Bài viết Bằng chứng",
+        social_url as "Link Trang cá nhân",
+        status as "Trạng thái tiếp cận",
+        outreach_count as "Số lần đã nhắn",
+        next_follow_up_at as "Lịch hẹn",
+        province as "Tỉnh/Thành"
+      FROM leads
+      WHERE lead_type = 'B2C'
       ORDER BY id DESC
     `).all();
 
@@ -570,22 +711,18 @@ router.get('/export/excel', (req, res) => {
         tuition_fee as "Học phí",
         discount_amount as "Ưu đãi giảm",
         paid_amount as "Đã đóng",
-        payment_status as "Trạng thái học phí",
         doc_cccd as "Có CCCD",
         doc_diploma as "Có Bằng THPT/ĐH",
         doc_photo as "Có Ảnh 3x4",
-        exam_status as "Tiến độ học & thi",
-        notes as "Ghi chú"
+        exam_status as "Tiến độ học & thi"
       FROM students
       ORDER BY id DESC
     `).all();
 
     const wb = XLSX.utils.book_new();
-    const wsLeads = XLSX.utils.json_to_sheet(leads);
-    const wsStudents = XLSX.utils.json_to_sheet(students);
-
-    XLSX.utils.book_append_sheet(wb, wsLeads, 'Khach_Ca_Nhan_Va_CLB');
-    XLSX.utils.book_append_sheet(wb, wsStudents, 'Hoc_Vien_Da_Chot_KPI');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(b2bLeads), '1_Co_So_Tap_Luyen_B2B');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(b2cLeads), '2_Khach_Ca_Nhan_B2C');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(students), '3_Hoc_Vien_KPI_100');
 
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     const filename = `VTC_Sport_CRM_${new Date().toISOString().slice(0, 10)}.xlsx`;
@@ -596,11 +733,6 @@ router.get('/export/excel', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
-
-router.post('/backup', (req, res) => {
-  const file = backupDatabase();
-  res.json({ success: Boolean(file), backupFile: file });
 });
 
 module.exports = router;

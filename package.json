@@ -1,10 +1,10 @@
 {
   "name": "vtc-sport-lead-crm",
-  "version": "1.0.0",
-  "description": "He thong Quet Hoc Vien Tiem Nang & CRM Tuyen Sinh Chung Chi TDTT - Hoc Vien The Thao VTC",
+  "version": "2.0.0",
+  "description": "He thong San Hoc Vien Ca Nhan (9 MXH + Bang Chung Bai Viet) & Co So Tap Luyen B2B + Cloud DB Sync",
   "main": "src/server.js",
   "scripts": {
-    "start": "node --no-warnings src/server.js",
+    "start": "node --watch --no-warnings src/server.js",
     "dev": "node --watch --no-warnings src/server.js",
     "test": "node --no-warnings tests/verify.js"
   },
@@ -12,6 +12,7 @@
     "cheerio": "^1.0.0",
     "cors": "^2.8.5",
     "express": "^4.21.1",
+    "pg": "^8.13.1",
     "playwright": "^1.48.2",
     "xlsx": "^0.18.5"
   }

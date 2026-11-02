@@ -4,41 +4,40 @@ const {
   normalizePhone,
   extractPhonesFromText,
   extractEmailsFromText,
+  validateLeadRelevance,
   detectSportCategory
 } = require('../utils/phoneParser');
 const { db, upsertLead } = require('../db/database');
 const { B2C_SPORT_KEYWORDS, crawlMultiPlatformSocialB2C } = require('./socialB2CCrawler');
+const { B2B_ADMISSION_KEYWORDS, crawlB2BAdmissions } = require('./b2bAdmissionsCrawler');
 
-/**
- * Bộ từ khóa mở rộng thông minh cho cả Cá nhân (B2C) và Cơ sở (B2B) theo 4 mảng của VTC
- */
 const SPORT_KEYWORDS_PRESETS = {
   gym: [
-    'PT tự do nhận dạy kèm 1:1',
-    'Personal Trainer Gym Fitness',
-    'Tìm việc PT Gym Huấn luyện viên thể hình',
-    'Học chứng chỉ PT ở đâu',
+    '"PT gym" nhận dạy kèm',
+    '"Personal Trainer" kèm 1:1',
+    '"Tìm việc PT" gym',
+    '"chứng chỉ PT" gym',
     'Phòng tập Gym Fitness'
   ],
   yoga: [
-    'Cô giáo Yoga dạy kèm',
-    'HLV Yoga trị liệu cá nhân',
-    'Tìm việc giáo viên Yoga',
-    'Thi chứng chỉ HLV Yoga Cục TDTT',
+    '"giáo viên Yoga" dạy kèm',
+    '"HLV Yoga" trị liệu',
+    '"tìm việc giáo viên Yoga"',
+    '"chứng chỉ HLV Yoga"',
     'Studio Yoga Pilates'
   ],
   dance: [
-    'Giáo viên dạy nhảy Zumba Shuffle Dance',
-    'HLV Dân vũ thể thao',
-    'Nhận dạy lớp Zumba Shuffle Dance',
-    'Chứng chỉ HLV Dân vũ thể thao',
-    'Câu lạc bộ Dân vũ Zumba'
+    '"dạy nhảy Zumba" Shuffle Dance',
+    '"lớp Shuffle Dance" Aerobic',
+    '"giáo viên dạy nhảy" Zumba',
+    '"chứng chỉ Dân vũ"',
+    'CLB Zumba Shuffle Dance Khiêu vũ'
   ],
   martial_arts: [
-    'HLV Võ cổ truyền Kickfit',
-    'Thầy dạy võ tự vệ cá nhân',
-    'Chứng chỉ HLV Võ cổ truyền Cục TDTT',
-    'Câu lạc bộ Võ cổ truyền Võ đường'
+    '"võ cổ truyền" dạy kèm',
+    '"HLV Kickfit" Boxing',
+    '"chứng chỉ võ cổ truyền"',
+    'Võ đường Võ cổ truyền CLB Kickfit'
   ]
 };
 
@@ -54,6 +53,7 @@ const activeCrawlState = {
   totalFound: 0,
   newInserted: 0,
   duplicatesSkipped: 0,
+  rejectedNoise: 0,
   logs: []
 };
 
@@ -70,9 +70,6 @@ function getCrawlState() {
   return { ...activeCrawlState };
 }
 
-/**
- * Quét sâu vào Website để lấy thêm SĐT di động, Zalo, Email và Link Facebook
- */
 async function enrichFromWebsite(page, url) {
   const result = { phones: [], emails: [], facebookUrl: '' };
   if (!url || !url.startsWith('http')) return result;
@@ -103,7 +100,7 @@ async function enrichFromWebsite(page, url) {
 }
 
 /**
- * Quét dữ liệu Cơ sở Thể thao (B2B) từ Google Maps bằng Playwright
+ * Quét dữ liệu Cơ sở Thể thao (B2B) từ Google Maps kèm Bộ Lọc Chống Nhiễu (Loại bỏ Bida, Bóng đá, Cafe...)
  */
 async function crawlGoogleMaps(page, query, province, sportCategory, maxResults = 20) {
   const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query + ' ' + province)}?hl=vi`;
@@ -146,13 +143,30 @@ async function crawlGoogleMaps(page, query, province, sportCategory, maxResults 
     return items;
   });
 
-  addCrawlLog(`📍 Tìm thấy ${places.length} địa điểm trên bản đồ. Đang bóc tách SĐT & liên hệ...`);
+  addCrawlLog(`📍 Tìm thấy ${places.length} địa điểm trên bản đồ. Đang lọc đúng bộ môn [${sportCategory.toUpperCase()}]...`);
 
   const collected = [];
-  const limit = Math.min(places.length, maxResults);
+  const limit = Math.min(places.length, maxResults + 10);
 
   for (let i = 0; i < limit; i++) {
+    if (collected.length >= maxResults) break;
     const item = places[i];
+
+    // Kiểm tra nhanh tên địa điểm trước khi mở trang chi tiết (Loại bỏ ngay CLB Bida, Billiards, Bóng đá...)
+    const preCheck = validateLeadRelevance({
+      name: item.name,
+      text: item.rawText,
+      url: item.google_maps_url,
+      leadType: 'B2B',
+      sportCategory
+    });
+
+    if (!preCheck.isValid) {
+      activeCrawlState.rejectedNoise++;
+      addCrawlLog(`🚫 [Đã lọc bỏ sai môn] ${item.name}`);
+      continue;
+    }
+
     try {
       await page.goto(item.google_maps_url, { waitUntil: 'domcontentloaded', timeout: 15000 });
       await page.waitForTimeout(1000);
@@ -162,8 +176,12 @@ async function crawlGoogleMaps(page, query, province, sportCategory, maxResults 
         let address = '';
         let phone = '';
         let website = '';
+        let categoryText = '';
         let rating = 0;
         let reviewCount = 0;
+
+        const catBtn = document.querySelector('button[jsaction*="pane.rating.category"]');
+        if (catBtn) categoryText = catBtn.innerText.trim();
 
         const addrBtn = document.querySelector('button[data-item-id="address"]');
         if (addrBtn) address = addrBtn.innerText.trim();
@@ -187,11 +205,26 @@ async function crawlGoogleMaps(page, query, province, sportCategory, maxResults 
           reviewCount = parseInt(revMatch[1].replace(/[.,]/g, ''), 10) || 0;
         }
 
-        return { address, phone, website, rating, reviewCount, textContent: textContent.slice(0, 4000) };
+        return { address, phone, website, categoryText, rating, reviewCount, textContent: textContent.slice(0, 3000) };
       });
 
-      const phones = extractPhonesFromText(`${details.phone} ${item.rawText} ${details.textContent}`);
-      let primaryPhone = phones[0] || normalizePhone(details.phone) || '';
+      // Kiểm tra lại với danh mục chi tiết của Google Maps
+      const detailCheck = validateLeadRelevance({
+        name: `${item.name} ${details.categoryText}`,
+        text: details.address,
+        url: item.google_maps_url,
+        leadType: 'B2B',
+        sportCategory
+      });
+
+      if (!detailCheck.isValid) {
+        activeCrawlState.rejectedNoise++;
+        addCrawlLog(`🚫 [Đã lọc bỏ sai danh mục] ${item.name} (${details.categoryText || 'Không khớp'})`);
+        continue;
+      }
+
+      const phones = extractPhonesFromText(`${details.phone} ${item.rawText}`);
+      let primaryPhone = normalizePhone(details.phone) || phones[0] || '';
       let facebookUrl = details.website.includes('facebook.com') ? details.website : '';
       let email = '';
 
@@ -207,7 +240,7 @@ async function crawlGoogleMaps(page, query, province, sportCategory, maxResults 
         name: item.name,
         lead_type: 'B2B',
         lead_intent: 'facility',
-        sport_category: detectSportCategory(`${item.name} ${query}`, sportCategory),
+        sport_category: detailCheck.detectedSport,
         platform: 'google_maps',
         social_url: item.google_maps_url,
         phone: primaryPhone,
@@ -221,7 +254,7 @@ async function crawlGoogleMaps(page, query, province, sportCategory, maxResults 
         rating: details.rating,
         review_count: details.reviewCount,
         source: 'google_maps',
-        notes: `[Google Maps B2B] Quét với từ khóa "${query} - ${province}"`
+        notes: `[Google Maps B2B${details.categoryText ? ' - ' + details.categoryText : ''}] Khu vực: ${details.address || province}`
       });
     } catch (_) {}
   }
@@ -229,15 +262,12 @@ async function crawlGoogleMaps(page, query, province, sportCategory, maxResults 
   return collected;
 }
 
-/**
- * Hàm điều phối Chiến dịch Quét Dữ liệu (Hỗ trợ cả Khách hàng Cá nhân B2C trên 6 MXH & Cơ sở B2B)
- */
 async function runCrawlCampaign({
   keyword,
   province = 'Hà Nội',
   sportCategory = 'gym',
-  targetMode = 'b2c_all', // 'b2c_all' (Tất cả Cá nhân MXH), 'b2c_creators' (HLV/PT tự do TikTok/IG/FB), 'b2c_job_seekers' (Tìm việc PT), 'b2c_cert_hunters' (Cần học bằng), 'b2b_maps' (Chỉ CLB/Phòng tập), 'hybrid' (Kết hợp cả B2C + B2B)
-  platforms = ['all'], // ['facebook', 'tiktok', 'instagram', 'telegram', 'x', 'youtube']
+  targetMode = 'b2c_all',
+  platforms = ['all'],
   maxResults = 30
 }) {
   if (activeCrawlState.isRunning) {
@@ -246,7 +276,7 @@ async function runCrawlCampaign({
 
   const effectiveKeyword = (keyword && keyword.trim())
     ? keyword.trim()
-    : (SPORT_KEYWORDS_PRESETS[sportCategory] ? SPORT_KEYWORDS_PRESETS[sportCategory][0] : 'HLV thể thao');
+    : (SPORT_KEYWORDS_PRESETS[sportCategory] ? SPORT_KEYWORDS_PRESETS[sportCategory][0] : 'Phòng tập Gym');
 
   const sourceDesc = `${targetMode}:${Array.isArray(platforms) ? platforms.join(',') : platforms}`;
 
@@ -269,6 +299,7 @@ async function runCrawlCampaign({
     totalFound: 0,
     newInserted: 0,
     duplicatesSkipped: 0,
+    rejectedNoise: 0,
     logs: []
   });
 
@@ -297,46 +328,76 @@ async function runCrawlCampaign({
     const page = await context.newPage();
     let rawLeads = [];
 
-    // 1. Quét Khách hàng Cá nhân (B2C) trên Facebook, TikTok, Instagram, Telegram, X, YouTube
     if (targetMode.startsWith('b2c') || targetMode === 'hybrid') {
-      const socialB2CLeads = await crawlMultiPlatformSocialB2C(page, {
+      // Nạp mới socialB2CCrawler & phoneParser để luôn áp dụng quy tắc lọc mới nhất mà không cần khởi động lại Server
+      delete require.cache[require.resolve('../utils/phoneParser')];
+      delete require.cache[require.resolve('./socialB2CCrawler')];
+      const { crawlMultiPlatformSocialB2C: freshCrawlB2C } = require('./socialB2CCrawler');
+
+      const socialB2CLeads = await freshCrawlB2C(page, {
         keyword: effectiveKeyword,
         province,
         sportCategory,
         platforms: Array.isArray(platforms) && platforms.length > 0 ? platforms : ['all'],
         b2cMode: targetMode === 'hybrid' ? 'all' : targetMode,
         maxResults,
-        onLog: addCrawlLog
+        onLog: addCrawlLog,
+        onReject: () => {
+          activeCrawlState.rejectedNoise++;
+        }
       });
       rawLeads = rawLeads.concat(socialB2CLeads);
     }
 
-    // 2. Quét Cơ sở / Câu lạc bộ (B2B) trên Google Maps nếu chọn b2b_maps hoặc hybrid
-    if (targetMode === 'b2b_maps' || targetMode === 'hybrid') {
-      const gmapLeads = await crawlGoogleMaps(page, effectiveKeyword, province, sportCategory, Math.ceil(maxResults / 2));
+    if (targetMode === 'b2b_maps' || targetMode === 'b2b_all' || targetMode === 'hybrid') {
+      const mapsLimit = targetMode === 'b2b_all' ? Math.max(10, Math.ceil(maxResults / 2)) : maxResults;
+      const gmapLeads = await crawlGoogleMaps(page, effectiveKeyword, province, sportCategory, mapsLimit);
       rawLeads = rawLeads.concat(gmapLeads);
     }
 
-    // Lưu vào SQLite và chống trùng lặp theo cả SĐT lẫn Link Profile MXH (@handle)
+    if (targetMode === 'b2b_admissions' || targetMode === 'b2b_all') {
+      delete require.cache[require.resolve('../utils/phoneParser')];
+      delete require.cache[require.resolve('./b2bAdmissionsCrawler')];
+      const { crawlB2BAdmissions: freshCrawlB2BAdmissions } = require('./b2bAdmissionsCrawler');
+
+      const admLimit = targetMode === 'b2b_all' ? Math.max(10, Math.ceil(maxResults / 2)) : maxResults;
+      const admissionLeads = await freshCrawlB2BAdmissions(page, {
+        keyword: effectiveKeyword,
+        province,
+        sportCategory,
+        maxResults: admLimit,
+        onLog: addCrawlLog,
+        onReject: () => {
+          activeCrawlState.rejectedNoise++;
+        }
+      });
+      rawLeads = rawLeads.concat(admissionLeads);
+    }
+
     for (const item of rawLeads) {
       if (!item.phone && !item.social_url && !item.facebook_url && !item.website) continue;
 
-      activeCrawlState.totalFound++;
       const res = upsertLead(item);
+      if (res.action === 'rejected_irrelevant') {
+        activeCrawlState.rejectedNoise++;
+        continue;
+      }
+
+      activeCrawlState.totalFound++;
       if (res.action === 'inserted') {
         activeCrawlState.newInserted++;
         const contactTag = item.phone
           ? `SĐT/Zalo: ${item.phone}`
           : `${item.platform.toUpperCase()} ${item.social_handle || 'Profile'}`;
-        addCrawlLog(`+ [MỚI - ${item.lead_type}] ${item.name} (${contactTag})`);
+        addCrawlLog(`+ [CHÍNH XÁC - ${item.lead_type}] ${item.name} (${contactTag})`);
       } else {
         activeCrawlState.duplicatesSkipped++;
-        addCrawlLog(`= [ĐÃ CÓ TRONG CRM - Bỏ qua trùng] ${item.name}`);
+        addCrawlLog(`= [ĐÃ CÓ - Bỏ qua trùng] ${item.name}`);
       }
     }
 
     addCrawlLog(
-      `✅ Hoàn tất chiến dịch #${campaignId}! Tìm thấy: ${activeCrawlState.totalFound} | Thêm mới: ${activeCrawlState.newInserted} | Đã có (bỏ qua trùng): ${activeCrawlState.duplicatesSkipped}`
+      `✅ Hoàn tất chiến dịch #${campaignId}! Đạt chuẩn: ${activeCrawlState.totalFound} | Thêm mới: +${activeCrawlState.newInserted} | Bỏ qua trùng: ${activeCrawlState.duplicatesSkipped} | Đã lọc bỏ rác/sai môn: ${activeCrawlState.rejectedNoise}`
     );
 
     db.prepare(`
@@ -371,6 +432,7 @@ async function runCrawlCampaign({
 module.exports = {
   SPORT_KEYWORDS_PRESETS,
   B2C_SPORT_KEYWORDS,
+  B2B_ADMISSION_KEYWORDS,
   getCrawlState,
   runCrawlCampaign
 };
